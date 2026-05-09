@@ -14,7 +14,7 @@ import tempfile
 # AUTO-DOWNLOAD MODEL FROM GOOGLE DRIVE
 # ─────────────────────────────────────────────
 MODEL_PATH  = "net_g_latest.pth"
-GDRIVE_ID   = "10zc9vnny190VyHLejaK4BrOFLCmdl0-z"
+GDRIVE_URL  = "https://drive.google.com/file/d/10zc9vnny190VyHLejaK4BrOFLCmdl0-z/view?usp=drive_link"
 
 def download_model_if_needed():
     if os.path.exists(MODEL_PATH):
@@ -25,7 +25,8 @@ def download_model_if_needed():
         except ImportError:
             os.system("pip install gdown -q")
             import gdown
-        gdown.download(id=GDRIVE_ID, output=MODEL_PATH, quiet=False)
+        # fuzzy=True bypasses the large-file confirmation page Google adds
+        gdown.download(url=GDRIVE_URL, output=MODEL_PATH, quiet=False, fuzzy=True)
         if os.path.exists(MODEL_PATH):
             return True, None
         return False, "Download completed but file not found."
