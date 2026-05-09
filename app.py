@@ -79,58 +79,278 @@ def download_dehaze_model_if_needed():
 st.markdown(
     """
 <style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+:root {
+    --bg: #020617;
+    --panel: #0f172a;
+    --panel2: #111827;
+    --card: rgba(15, 23, 42, 0.88);
+    --border: rgba(148, 163, 184, 0.18);
+    --cyan: #22d3ee;
+    --blue: #38bdf8;
+    --green: #34d399;
+    --text: #e5f4ff;
+    --muted: #94a3b8;
+    --danger: #fb7185;
+    --warning: #fbbf24;
+}
+
+html, body, [class*="css"] {
+    font-family: 'Inter', sans-serif !important;
+}
+
 .stApp {
-    background: #050a12;
-    color: #d8ecff;
+    background:
+        radial-gradient(circle at top left, rgba(34, 211, 238, 0.13), transparent 33%),
+        radial-gradient(circle at top right, rgba(52, 211, 153, 0.10), transparent 32%),
+        linear-gradient(135deg, #020617 0%, #050b18 50%, #020617 100%) !important;
+    color: var(--text) !important;
 }
+
+/* Main page spacing */
 .block-container {
-    padding-top: 1.4rem;
+    max-width: 1280px !important;
+    padding-top: 2rem !important;
+    padding-bottom: 3rem !important;
 }
-h1, h2, h3 {
-    color: #00d4ff !important;
+
+/* Hide ugly Streamlit chrome spacing */
+header[data-testid="stHeader"] {
+    background: transparent !important;
 }
+
+/* Sidebar */
 [data-testid="stSidebar"] {
-    background: #07111f;
+    background:
+        linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(2, 6, 23, 0.98)) !important;
+    border-right: 1px solid var(--border) !important;
 }
+
+[data-testid="stSidebar"] > div:first-child {
+    padding-top: 2rem !important;
+}
+
+[data-testid="stSidebar"] h3 {
+    color: var(--cyan) !important;
+    font-size: 0.95rem !important;
+    letter-spacing: -0.02em !important;
+}
+
+/* Headings */
+h1 {
+    font-size: 3rem !important;
+    line-height: 1.05 !important;
+    font-weight: 900 !important;
+    letter-spacing: -0.06em !important;
+    color: var(--text) !important;
+    margin-bottom: 0.3rem !important;
+}
+
+h1::first-letter {
+    color: var(--cyan);
+}
+
+h2, h3 {
+    color: var(--text) !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.04em !important;
+}
+
+p, label, span, div {
+    color: inherit;
+}
+
+/* Subtitle under title */
+h3 {
+    color: var(--muted) !important;
+    font-size: 1.18rem !important;
+}
+
+/* Metric cards */
 .metric-card {
-    background: #0d1e35;
-    border: 1px solid #1a3a5c;
-    border-top: 2px solid #00d4ff;
-    padding: 1rem;
-    border-radius: 8px;
-    text-align: center;
+    position: relative;
+    overflow: hidden;
+    background:
+        linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.72)) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 20px !important;
+    padding: 1.1rem 1rem !important;
+    text-align: left !important;
+    min-height: 105px;
+    box-shadow: 0 18px 55px rgba(0, 0, 0, 0.25);
 }
+
+.metric-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, rgba(34, 211, 238, 0.16), transparent 45%);
+    pointer-events: none;
+}
+
+.metric-card::after {
+    content: "";
+    position: absolute;
+    height: 3px;
+    left: 18px;
+    right: 18px;
+    top: 0;
+    background: linear-gradient(90deg, var(--cyan), var(--green));
+    border-radius: 999px;
+}
+
 .metric-val {
-    color: #00ff88;
-    font-size: 1.15rem;
-    font-weight: 800;
+    position: relative;
+    color: var(--text) !important;
+    font-size: 1.25rem !important;
+    font-weight: 900 !important;
+    letter-spacing: -0.03em !important;
+    margin-top: 0.25rem;
 }
+
 .metric-lbl {
-    color: #7fa1bd;
-    font-size: 0.75rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    position: relative;
+    color: var(--muted) !important;
+    font-size: 0.72rem !important;
+    letter-spacing: 0.12em !important;
+    text-transform: uppercase !important;
+    margin-top: 0.45rem;
 }
+
+/* Expanders */
+.streamlit-expanderHeader {
+    background: rgba(15, 23, 42, 0.78) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 16px !important;
+    color: var(--text) !important;
+}
+
+[data-testid="stExpander"] {
+    border: 0 !important;
+}
+
+/* Upload box */
+[data-testid="stFileUploader"] {
+    background: rgba(15, 23, 42, 0.74) !important;
+    border: 1px dashed rgba(34, 211, 238, 0.45) !important;
+    border-radius: 22px !important;
+    padding: 1.2rem !important;
+}
+
+[data-testid="stFileUploader"] section {
+    background: rgba(2, 6, 23, 0.35) !important;
+    border: 0 !important;
+}
+
+[data-testid="stFileUploaderDropzone"] {
+    background: rgba(15, 23, 42, 0.72) !important;
+    border: 1px dashed rgba(34, 211, 238, 0.35) !important;
+    border-radius: 18px !important;
+}
+
+/* Buttons */
+.stButton > button,
+[data-testid="stBaseButton-secondary"] {
+    background: linear-gradient(135deg, var(--cyan), var(--blue)) !important;
+    color: #020617 !important;
+    border: 0 !important;
+    border-radius: 14px !important;
+    font-weight: 800 !important;
+    box-shadow: 0 12px 30px rgba(34, 211, 238, 0.22) !important;
+}
+
+.stButton > button:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.05);
+}
+
+/* Inputs */
+.stSelectbox div[data-baseweb="select"] > div,
+.stTextInput input,
+.stNumberInput input {
+    background: rgba(15, 23, 42, 0.92) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 14px !important;
+    color: var(--text) !important;
+}
+
+/* Sliders */
+.stSlider [data-baseweb="slider"] > div {
+    color: var(--cyan) !important;
+}
+
+.stSlider [role="slider"] {
+    background: var(--cyan) !important;
+    box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.18) !important;
+}
+
+/* Radio / toggles labels */
+.stRadio label,
+.stCheckbox label {
+    color: var(--muted) !important;
+    font-weight: 600 !important;
+}
+
+/* Alerts */
+.stAlert {
+    background: rgba(15, 23, 42, 0.84) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 18px !important;
+}
+
+/* Images */
+[data-testid="stImage"] img {
+    border-radius: 20px !important;
+    border: 1px solid var(--border) !important;
+    box-shadow: 0 18px 60px rgba(0,0,0,0.35);
+}
+
+/* Dataframe */
+[data-testid="stDataFrame"] {
+    border-radius: 18px !important;
+    overflow: hidden !important;
+}
+
+/* Custom boxes */
 .small-note {
-    color: #7fa1bd;
-    font-size: 0.85rem;
-    line-height: 1.6;
+    color: var(--muted);
+    font-size: 0.86rem;
+    line-height: 1.7;
+    background: rgba(15, 23, 42, 0.56);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 0.85rem;
 }
+
 .warning-box {
-    background: #21170a;
-    border: 1px solid #ffb800;
-    color: #ffdf8a;
-    padding: 0.9rem 1rem;
-    border-radius: 8px;
+    background: rgba(251, 191, 36, 0.10);
+    border: 1px solid rgba(251, 191, 36, 0.28);
+    color: #fde68a;
+    padding: 1rem 1.1rem;
+    border-radius: 18px;
     margin-bottom: 1rem;
 }
+
 .info-box {
-    background: #071b2c;
-    border: 1px solid #1a3a5c;
-    color: #c8e8ff;
-    padding: 0.9rem 1rem;
-    border-radius: 8px;
+    background: rgba(34, 211, 238, 0.08);
+    border: 1px solid rgba(34, 211, 238, 0.25);
+    color: #cffafe;
+    padding: 1rem 1.1rem;
+    border-radius: 18px;
     margin-bottom: 1rem;
+}
+
+/* Make success boxes prettier */
+[data-testid="stSidebar"] .stAlert {
+    background: rgba(16, 185, 129, 0.10) !important;
+    border: 1px solid rgba(16, 185, 129, 0.22) !important;
+}
+
+/* Top action icons area less ugly */
+.viewerBadge_container__1QSob,
+.stDeployButton {
+    display: none !important;
 }
 </style>
 """,
@@ -703,7 +923,7 @@ with st.sidebar:
     inference_size = st.selectbox(
         "Dehazing inference size",
         [128, 192, 256],
-        index=1,
+        index=0,
         help="Lower is faster. 192 is recommended for real-time mode."
     )
 
@@ -740,6 +960,7 @@ with st.sidebar:
         """
         <div class="small-note">
         Pipeline: input frame → dehazing → YOLO object detection → AR-style overlay.<br><br>
+        Real-time mode uses 320×240 webcam resolution and runs YOLO every 3 frames to reduce delay.<br><br>
         Full DVD/NSDNGAN is excluded here because it requires custom DCNv2 CUDA extensions.
         </div>
         """,
@@ -788,7 +1009,7 @@ if enable_detection:
 # ============================================================
 
 st.markdown("# 👁️ NEXTGEN VISION AI")
-st.markdown("### Real-Time AR Vision Enhancement System — Dehazing + Object Detection")
+st.markdown("### AI-powered visibility enhancement with real-time road object detection")
 
 c1, c2, c3, c4 = st.columns(4)
 
@@ -947,7 +1168,7 @@ else:
         """
         <div class="warning-box">
         Real-time mode is heavy because every camera frame goes through dehazing and YOLO.
-        For smoother FPS on Streamlit Cloud, use inference size 128 or 192 and keep YOLO confidence around 0.35.
+        For smoother FPS on Streamlit Cloud, use inference size 128, 320×240 webcam resolution, and YOLO frame skipping.
         </div>
         """,
         unsafe_allow_html=True,
@@ -971,9 +1192,14 @@ else:
         def __init__(self):
             self.last_time = time.time()
             self.fps = 0.0
-            self.frame_skip_counter = 0
-            self.last_detection_frame = None
-            self.last_detections = []
+
+            # Frame skipping for YOLO.
+            # YOLO will run every 3 frames only, which reduces delay.
+            self.frame_count = 0
+
+            # Cache the last detection output so skipped frames still show boxes.
+            self.cached_detection_frame = None
+            self.cached_detections = []
 
         def recv(self, frame):
             img = frame.to_ndarray(format="bgr24")
@@ -981,6 +1207,7 @@ else:
             start = time.time()
 
             try:
+                # 1) Dehaze every frame
                 dehazed = dehaze_image(
                     img,
                     strength=strength,
@@ -990,15 +1217,32 @@ else:
 
                 detections = []
 
+                # 2) Run YOLO only every 3 frames to reduce delay
+                self.frame_count += 1
+
                 if enable_detection:
-                    final, detections = detect_objects_yolo(
-                        dehazed,
-                        conf_threshold=conf_threshold,
-                        only_driving_classes=only_driving_classes,
-                        draw_ar_style=draw_ar_style,
-                    )
+                    if self.frame_count % 3 == 0:
+                        final, detections = detect_objects_yolo(
+                            dehazed,
+                            conf_threshold=conf_threshold,
+                            only_driving_classes=only_driving_classes,
+                            draw_ar_style=draw_ar_style,
+                        )
+
+                        self.cached_detection_frame = final.copy()
+                        self.cached_detections = detections
+
+                    else:
+                        # Reuse previous YOLO output instead of running YOLO again
+                        if self.cached_detection_frame is not None:
+                            final = self.cached_detection_frame.copy()
+                            detections = self.cached_detections
+                        else:
+                            final = dehazed
+                            detections = []
                 else:
                     final = dehazed
+                    detections = []
 
                 processing_time = time.time() - start
 
@@ -1017,7 +1261,7 @@ else:
                     mode="LIVE",
                 )
 
-            except Exception as e:
+            except Exception:
                 final = img.copy()
 
                 cv2.putText(
@@ -1039,9 +1283,9 @@ else:
         rtc_configuration=rtc_config,
         media_stream_constraints={
             "video": {
-                "width": {"ideal": 640},
-                "height": {"ideal": 480},
-                "frameRate": {"ideal": 8, "max": 12},
+                "width": {"ideal": 320},
+                "height": {"ideal": 240},
+                "frameRate": {"ideal": 8, "max": 10},
             },
             "audio": False,
         },
