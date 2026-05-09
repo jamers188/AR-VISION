@@ -189,10 +189,14 @@ def load_model(path):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model  = FFA(gps=3, blocks=19)
     try:
-        state = torch.load(path, map_location=device)
+        state = torch.load(path, map_location=device, weights_only=False)
         if isinstance(state, dict):
-            key = next((k for k in ["params","state_dict","model"] if k in state), None)
-            model.load_state_dict(state[key] if key else state, strict=False)
+            # Try common checkpoint key names
+            key = next((k for k in ["params", "state_dict", "model", "net_g", "generator"] if k in state), None)
+            sd  = state[key] if key else state
+            # Strip "module." prefix if saved with DataParallel
+            sd  = {k.replace("module.", ""): v for k, v in sd.items()}
+            model.load_state_dict(sd, strict=False)
         model.eval().to(device)
         return model, device, None
     except Exception as e:
@@ -205,15 +209,20 @@ def load_model(path):
 def dehaze_image(model, device, img_bgr, strength=1.0):
     h, w = img_bgr.shape[:2]
     H, W = max((h//16)*16, 16), max((w//16)*16, 16)
-    inp  = cv2.cvtColor(cv2.resize(img_bgr,(W,H)), cv2.COLOR_BGR2RGB).astype(np.float32)/255.0
-    t    = torch.from_numpy(inp).permute(2,0,1).unsqueeze(0).to(device)
+    resized = cv2.resize(img_bgr, (W, H))
+    # Convert BGR->RGB for the model (trained on RGB)
+    inp_rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+    t = torch.from_numpy(inp_rgb).permute(2, 0, 1).unsqueeze(0).to(device)
     with torch.no_grad():
-        out = model(t).squeeze(0).permute(1,2,0).cpu().numpy()
+        out = model(t)
+    out = out.squeeze(0).permute(1, 2, 0).cpu().numpy()
     out = np.clip(out, 0, 1)
+    # Blend with original if strength < 1
     if strength < 1.0:
-        out = inp*(1-strength) + out*strength
-    out = cv2.cvtColor((out*255).astype(np.uint8), cv2.COLOR_RGB2BGR)
-    return cv2.resize(out, (w, h))
+        out = inp_rgb * (1 - strength) + out * strength
+    # Convert RGB->BGR back for OpenCV
+    out_bgr = cv2.cvtColor((out * 255).astype(np.uint8), cv2.COLOR_RGB2BGR)
+    return cv2.resize(out_bgr, (w, h))
 
 def compute_metrics(orig, enh):
     mse  = np.mean((orig.astype(np.float64)-enh.astype(np.float64))**2)
@@ -332,6 +341,28 @@ with c4:
     st.markdown(f'<div class="metric-card"><div class="metric-val" style="font-size:1rem">{int(strength*100)}%</div><div class="metric-lbl">Enhancement Strength</div></div>', unsafe_allow_html=True)
 
 st.markdown("<br>", unsafe_allow_html=True)
+
+# ── Checkpoint Inspector (debug) ──
+with st.expander("🔍 Checkpoint Inspector (click to debug model keys)"):
+    if os.path.exists(MODEL_PATH):
+        try:
+            ckpt = torch.load(MODEL_PATH, map_location="cpu", weights_only=False)
+            if isinstance(ckpt, dict):
+                st.markdown(f"**Top-level keys:** `{list(ckpt.keys())}`")
+                key = next((k for k in ["params","state_dict","model","net_g","generator"] if k in ckpt), None)
+                if key:
+                    inner = ckpt[key]
+                    st.markdown(f"**Using key:** `{key}` — {len(inner)} weight tensors")
+                    st.markdown(f"**First 5 weight names:** `{list(inner.keys())[:5]}`")
+                else:
+                    st.markdown(f"**No standard key found — treating as raw state dict**")
+                    st.markdown(f"**First 5 weight names:** `{list(ckpt.keys())[:5]}`")
+            else:
+                st.markdown(f"**Checkpoint type:** `{type(ckpt)}`")
+        except Exception as e:
+            st.error(f"Could not inspect checkpoint: {e}")
+    else:
+        st.warning("Model file not downloaded yet.")
 
 # Auto-download on first load (silent)
 if not model_exists:
