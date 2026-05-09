@@ -14,7 +14,7 @@ import tempfile
 # AUTO-DOWNLOAD MODEL FROM GOOGLE DRIVE
 # ─────────────────────────────────────────────
 MODEL_PATH  = "net_g_latest.pth"
-GDRIVE_URL  = "https://drive.google.com/file/d/10zc9vnny190VyHLejaK4BrOFLCmdl0-z/view?usp=drive_link"
+GDRIVE_URL  = "https://drive.google.com/file/d/1l9FNhi0gec-qBqd3M55Tpw16fkSNDgWT/view?usp=sharing"
 
 def download_model_if_needed():
     if os.path.exists(MODEL_PATH):
