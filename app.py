@@ -25,7 +25,7 @@ try:
 except Exception:
     WEBRTC_AVAILABLE = False
 
-st.set_page_config(page_title="GEN VISION AI", page_icon="", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="GEN VISION AI", page_icon="N", layout="wide", initial_sidebar_state="expanded")
 
 DEHAZE_MODEL_PATH = "remove_hazy_model_256x256.pth"
 DEHAZE_GDRIVE_ID = "1ji3x-KO19X2yGpT7oaUIpJ5DiCgQg8xS"
