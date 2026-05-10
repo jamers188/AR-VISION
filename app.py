@@ -25,7 +25,7 @@ try:
 except Exception:
     WEBRTC_AVAILABLE = False
 
-st.set_page_config(page_title="NEXTGEN VISION AI", page_icon="NEXT", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="GEN VISION AI", page_icon="", layout="wide", initial_sidebar_state="expanded")
 
 DEHAZE_MODEL_PATH = "remove_hazy_model_256x256.pth"
 DEHAZE_GDRIVE_ID = "1ji3x-KO19X2yGpT7oaUIpJ5DiCgQg8xS"
@@ -125,7 +125,7 @@ def detect_objects_yolo(img_bgr,conf_threshold=.35,only_driving_classes=True,dra
         cv2.rectangle(annotated,(x1,y1),(x2,y2),color,2); label=f'{name.upper()} {conf:.2f}'; ly=max(y1-10,25); cv2.rectangle(annotated,(x1,ly-24),(x1+max(130,len(label)*12),ly+5),color,-1); cv2.putText(annotated,label,(x1+6,ly-5),cv2.FONT_HERSHEY_SIMPLEX,.55,(2,6,23),2,cv2.LINE_AA); cv2.circle(annotated,(int((x1+x2)/2),int((y1+y2)/2)),4,color,-1)
     return annotated,det
 def draw_system_overlay(img_bgr,mode='IMAGE',fps=None,inference_time=None,detection_count=0):
-    out=img_bgr.copy(); cv2.putText(out,f'NEXTGEN VISION AI | {mode}',(15,30),cv2.FONT_HERSHEY_SIMPLEX,.72,(0,255,180),2,cv2.LINE_AA); line=f'Objects: {detection_count}'; line += f' | FPS: {fps:.1f}' if fps is not None else ''; line += f' | Time: {inference_time:.2f}s' if inference_time is not None else ''; cv2.putText(out,line,(15,60),cv2.FONT_HERSHEY_SIMPLEX,.55,(0,212,255),2,cv2.LINE_AA); return out
+    out=img_bgr.copy(); cv2.putText(out,f'GEN VISION AI | {mode}',(15,30),cv2.FONT_HERSHEY_SIMPLEX,.72,(0,255,180),2,cv2.LINE_AA); line=f'Objects: {detection_count}'; line += f' | FPS: {fps:.1f}' if fps is not None else ''; line += f' | Time: {inference_time:.2f}s' if inference_time is not None else ''; cv2.putText(out,line,(15,60),cv2.FONT_HERSHEY_SIMPLEX,.55,(0,212,255),2,cv2.LINE_AA); return out
 def visibility_score(img_bgr):
     gray=cv2.cvtColor(img_bgr,cv2.COLOR_BGR2GRAY); contrast=float(gray.std()); sharp=float(cv2.Laplacian(gray,cv2.CV_64F).var()); return min(100,max(0,int(contrast*1.4+(sharp**.5)*2))),round(contrast,2),round(sharp,2)
 def process_pipeline(frame,strength,dcp_only,inference_size,enable_detection,conf,only_classes,ar_style,mode):
@@ -136,7 +136,7 @@ with st.sidebar:
     st.success('Dehazing model ready' if os.path.exists(DEHAZE_MODEL_PATH) else 'Dehazing model will download')
     st.success('YOLO available' if YOLO_AVAILABLE else 'YOLO missing')
     st.markdown('---')
-    app_mode=st.radio('Demo Mode',['Image Upload','Video Upload','Live Camera'],index=0)
+    app_mode=st.radio('Mode',['Image Upload','Video Upload','Live Camera'],index=0)
     st.markdown('---'); st.markdown('### Enhancement')
     strength=st.slider('Enhancement strength',0.0,1.0,1.0,.05); dcp_only=st.toggle('DCP only mode',value=False); inference_size=st.selectbox('Dehazing inference size',[128,192,256],index=1)
     st.markdown('---'); st.markdown('### Object Detection')
@@ -156,13 +156,13 @@ try:
         if enable_detection and YOLO_AVAILABLE: yolo_model=load_yolo_model()
 except Exception as e: st.error(f'Model loading failed: {e}'); st.stop()
 
-st.markdown('# NEXTGEN VISION AI')
+st.markdown('# GEN VISION AI')
 st.markdown('<div class="hero-subtitle">Real-Time AR Vision Enhancement System for adverse weather driving conditions. This prototype demonstrates visibility restoration, hazard detection, AR-style overlays, and performance metrics.</div><span class="hero-badge">DCP + ResNet Dehazing</span><span class="hero-badge">YOLOv8 Object Detection</span><span class="hero-badge">Image · Video · Live Camera</span>',unsafe_allow_html=True)
 c1,c2,c3,c4=st.columns(4)
 c1.markdown('<div class="metric-card"><div class="metric-val">READY</div><div class="metric-lbl">Dehazing Model</div></div>',unsafe_allow_html=True); c2.markdown(f'<div class="metric-card"><div class="metric-val">{str(device).upper()}</div><div class="metric-lbl">Compute Device</div></div>',unsafe_allow_html=True); c3.markdown(f'<div class="metric-card"><div class="metric-val">{"ON" if enable_detection else "OFF"}</div><div class="metric-lbl">YOLO Detection</div></div>',unsafe_allow_html=True); c4.markdown(f'<div class="metric-card"><div class="metric-val">{inference_size}px</div><div class="metric-lbl">Inference Size</div></div>',unsafe_allow_html=True)
 
 if app_mode=='Image Upload':
-    st.markdown('## Image Upload Demo'); st.markdown('<div class="info-box">Use this mode for the cleanest before/after result during presentation.</div>',unsafe_allow_html=True)
+    st.markdown('## Image Enhancement'); st.markdown('<div class="info-box">Upload a hazy road image to compare the original frame, the enhanced frame, and the final detection output.</div>',unsafe_allow_html=True)
     uploaded=st.file_uploader('Upload a hazy/foggy road image',type=['jpg','jpeg','png'])
     if uploaded:
         rgb=np.array(Image.open(uploaded).convert('RGB')); bgr=cv2.cvtColor(rgb,cv2.COLOR_RGB2BGR); deh,final,dets,dt,yt=process_pipeline(bgr,strength,dcp_only,inference_size,enable_detection,conf_threshold,only_driving_classes,draw_ar_style,'IMAGE')
@@ -171,7 +171,7 @@ if app_mode=='Image Upload':
         st.dataframe(pd.DataFrame(dets),use_container_width=True) if dets else st.info('No driving-related objects detected.')
     else: st.info('Upload an image to start.')
 elif app_mode=='Video Upload':
-    st.markdown('## Video Upload Full Pipeline Demo'); st.markdown('<div class="info-box">Best mode for presentation: it shows dehazing + object detection together without webcam lag.</div>',unsafe_allow_html=True)
+    st.markdown('## Video Processing'); st.markdown('<div class="info-box">Best mode for presentation: it shows dehazing + object detection together without webcam lag.</div>',unsafe_allow_html=True)
     uploaded_video=st.file_uploader('Upload a hazy/foggy road video',type=['mp4','avi','mov','mkv'])
     if uploaded_video:
         inp=tempfile.NamedTemporaryFile(delete=False,suffix='.mp4'); inp.write(uploaded_video.read()); inp.close(); st.video(inp.name)
@@ -205,5 +205,5 @@ else:
             except Exception: final=img
             return av.VideoFrame.from_ndarray(final,format='bgr24')
     webrtc_streamer(key='nextgen-live-camera',video_processor_factory=LiveProcessor,rtc_configuration=rtc_config,media_stream_constraints={'video':{'width':{'ideal':240},'height':{'ideal':180},'frameRate':{'ideal':8,'max':10}},'audio':False},async_processing=True)
-with st.expander('Developer Debug'):
+with st.expander('System Diagnostics'):
     st.write('Dehazing missing keys:',len(missing_keys)); st.write('Dehazing unexpected keys:',len(unexpected_keys)); st.write('YOLO available:',YOLO_AVAILABLE); st.write('WebRTC available:',WEBRTC_AVAILABLE)
