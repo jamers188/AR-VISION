@@ -25,7 +25,7 @@ try:
 except Exception:
     WEBRTC_AVAILABLE = False
 
-st.set_page_config(page_title="GEN VISION AI", page_icon="N", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="NEXTGEN VISION AI", page_icon="N", layout="wide", initial_sidebar_state="expanded")
 
 DEHAZE_MODEL_PATH = "remove_hazy_model_256x256.pth"
 DEHAZE_GDRIVE_ID = "1ji3x-KO19X2yGpT7oaUIpJ5DiCgQg8xS"
@@ -125,7 +125,7 @@ def detect_objects_yolo(img_bgr,conf_threshold=.35,only_driving_classes=True,dra
         cv2.rectangle(annotated,(x1,y1),(x2,y2),color,2); label=f'{name.upper()} {conf:.2f}'; ly=max(y1-10,25); cv2.rectangle(annotated,(x1,ly-24),(x1+max(130,len(label)*12),ly+5),color,-1); cv2.putText(annotated,label,(x1+6,ly-5),cv2.FONT_HERSHEY_SIMPLEX,.55,(2,6,23),2,cv2.LINE_AA); cv2.circle(annotated,(int((x1+x2)/2),int((y1+y2)/2)),4,color,-1)
     return annotated,det
 def draw_system_overlay(img_bgr,mode='IMAGE',fps=None,inference_time=None,detection_count=0):
-    out=img_bgr.copy(); cv2.putText(out,f'GEN VISION AI | {mode}',(15,30),cv2.FONT_HERSHEY_SIMPLEX,.72,(0,255,180),2,cv2.LINE_AA); line=f'Objects: {detection_count}'; line += f' | FPS: {fps:.1f}' if fps is not None else ''; line += f' | Time: {inference_time:.2f}s' if inference_time is not None else ''; cv2.putText(out,line,(15,60),cv2.FONT_HERSHEY_SIMPLEX,.55,(0,212,255),2,cv2.LINE_AA); return out
+    out=img_bgr.copy(); cv2.putText(out,f'NEXTGEN VISION AI | {mode}',(15,30),cv2.FONT_HERSHEY_SIMPLEX,.72,(0,255,180),2,cv2.LINE_AA); line=f'Objects: {detection_count}'; line += f' | FPS: {fps:.1f}' if fps is not None else ''; line += f' | Time: {inference_time:.2f}s' if inference_time is not None else ''; cv2.putText(out,line,(15,60),cv2.FONT_HERSHEY_SIMPLEX,.55,(0,212,255),2,cv2.LINE_AA); return out
 def visibility_score(img_bgr):
     gray=cv2.cvtColor(img_bgr,cv2.COLOR_BGR2GRAY); contrast=float(gray.std()); sharp=float(cv2.Laplacian(gray,cv2.CV_64F).var()); return min(100,max(0,int(contrast*1.4+(sharp**.5)*2))),round(contrast,2),round(sharp,2)
 def process_pipeline(frame,strength,dcp_only,inference_size,enable_detection,conf,only_classes,ar_style,mode):
@@ -156,7 +156,7 @@ try:
         if enable_detection and YOLO_AVAILABLE: yolo_model=load_yolo_model()
 except Exception as e: st.error(f'Model loading failed: {e}'); st.stop()
 
-st.markdown('# GEN VISION AI')
+st.markdown('# NEXTGEN VISION AI')
 st.markdown('<div class="hero-subtitle">Real-Time AR Vision Enhancement System for adverse weather driving conditions. This prototype demonstrates visibility restoration, hazard detection, AR-style overlays, and performance metrics.</div><span class="hero-badge">DCP + ResNet Dehazing</span><span class="hero-badge">YOLOv8 Object Detection</span><span class="hero-badge">Image · Video · Live Camera</span>',unsafe_allow_html=True)
 c1,c2,c3,c4=st.columns(4)
 c1.markdown('<div class="metric-card"><div class="metric-val">READY</div><div class="metric-lbl">Dehazing Model</div></div>',unsafe_allow_html=True); c2.markdown(f'<div class="metric-card"><div class="metric-val">{str(device).upper()}</div><div class="metric-lbl">Compute Device</div></div>',unsafe_allow_html=True); c3.markdown(f'<div class="metric-card"><div class="metric-val">{"ON" if enable_detection else "OFF"}</div><div class="metric-lbl">YOLO Detection</div></div>',unsafe_allow_html=True); c4.markdown(f'<div class="metric-card"><div class="metric-val">{inference_size}px</div><div class="metric-lbl">Inference Size</div></div>',unsafe_allow_html=True)
