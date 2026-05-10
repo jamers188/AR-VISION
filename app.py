@@ -25,7 +25,7 @@ try:
 except Exception:
     WEBRTC_AVAILABLE = False
 
-st.set_page_config(page_title="NEXTGEN VISION AI", page_icon="👁️", layout="wide", initial_sidebar_state="expanded")
+st.set_page_config(page_title="NEXTGEN VISION AI", page_icon="NEXT", layout="wide", initial_sidebar_state="expanded")
 
 DEHAZE_MODEL_PATH = "remove_hazy_model_256x256.pth"
 DEHAZE_GDRIVE_ID = "1ji3x-KO19X2yGpT7oaUIpJ5DiCgQg8xS"
@@ -132,11 +132,11 @@ def process_pipeline(frame,strength,dcp_only,inference_size,enable_detection,con
     t0=time.time(); dehazed=dehaze_image(frame,strength,dcp_only,inference_size); dt=time.time()-t0; t1=time.time(); final,dets=detect_objects_yolo(dehazed,conf,only_classes,ar_style) if enable_detection else (dehazed,[]); yt=time.time()-t1; return dehazed,draw_system_overlay(final,mode=mode,inference_time=dt+yt,detection_count=len(dets)),dets,dt,yt
 
 with st.sidebar:
-    st.markdown('### ⚙️ System Control')
+    st.markdown('### System Control')
     st.success('Dehazing model ready' if os.path.exists(DEHAZE_MODEL_PATH) else 'Dehazing model will download')
     st.success('YOLO available' if YOLO_AVAILABLE else 'YOLO missing')
     st.markdown('---')
-    app_mode=st.radio('Demo Mode',['🖼️ Image Upload','🎞️ Video Upload','📹 Live Camera'],index=0)
+    app_mode=st.radio('Demo Mode',['Image Upload','Video Upload','Live Camera'],index=0)
     st.markdown('---'); st.markdown('### Enhancement')
     strength=st.slider('Enhancement strength',0.0,1.0,1.0,.05); dcp_only=st.toggle('DCP only mode',value=False); inference_size=st.selectbox('Dehazing inference size',[128,192,256],index=1)
     st.markdown('---'); st.markdown('### Object Detection')
@@ -156,13 +156,13 @@ try:
         if enable_detection and YOLO_AVAILABLE: yolo_model=load_yolo_model()
 except Exception as e: st.error(f'Model loading failed: {e}'); st.stop()
 
-st.markdown('# 👁️ NEXTGEN VISION AI')
+st.markdown('# NEXTGEN VISION AI')
 st.markdown('<div class="hero-subtitle">Real-Time AR Vision Enhancement System for adverse weather driving conditions. This prototype demonstrates visibility restoration, hazard detection, AR-style overlays, and performance metrics.</div><span class="hero-badge">DCP + ResNet Dehazing</span><span class="hero-badge">YOLOv8 Object Detection</span><span class="hero-badge">Image · Video · Live Camera</span>',unsafe_allow_html=True)
 c1,c2,c3,c4=st.columns(4)
 c1.markdown('<div class="metric-card"><div class="metric-val">READY</div><div class="metric-lbl">Dehazing Model</div></div>',unsafe_allow_html=True); c2.markdown(f'<div class="metric-card"><div class="metric-val">{str(device).upper()}</div><div class="metric-lbl">Compute Device</div></div>',unsafe_allow_html=True); c3.markdown(f'<div class="metric-card"><div class="metric-val">{"ON" if enable_detection else "OFF"}</div><div class="metric-lbl">YOLO Detection</div></div>',unsafe_allow_html=True); c4.markdown(f'<div class="metric-card"><div class="metric-val">{inference_size}px</div><div class="metric-lbl">Inference Size</div></div>',unsafe_allow_html=True)
 
-if app_mode=='🖼️ Image Upload':
-    st.markdown('## 🖼️ Image Upload Demo'); st.markdown('<div class="info-box">Use this mode for the cleanest before/after result during presentation.</div>',unsafe_allow_html=True)
+if app_mode=='Image Upload':
+    st.markdown('## Image Upload Demo'); st.markdown('<div class="info-box">Use this mode for the cleanest before/after result during presentation.</div>',unsafe_allow_html=True)
     uploaded=st.file_uploader('Upload a hazy/foggy road image',type=['jpg','jpeg','png'])
     if uploaded:
         rgb=np.array(Image.open(uploaded).convert('RGB')); bgr=cv2.cvtColor(rgb,cv2.COLOR_RGB2BGR); deh,final,dets,dt,yt=process_pipeline(bgr,strength,dcp_only,inference_size,enable_detection,conf_threshold,only_driving_classes,draw_ar_style,'IMAGE')
@@ -170,12 +170,12 @@ if app_mode=='🖼️ Image Upload':
         oscore,_,_=visibility_score(bgr); escore,_,_=visibility_score(deh); m1,m2,m3,m4=st.columns(4); m1.metric('Original Visibility',f'{oscore}%'); m2.metric('Enhanced Visibility',f'{escore}%'); m3.metric('Processing Time',f'{dt+yt:.2f}s'); m4.metric('Objects Detected',len(dets))
         st.dataframe(pd.DataFrame(dets),use_container_width=True) if dets else st.info('No driving-related objects detected.')
     else: st.info('Upload an image to start.')
-elif app_mode=='🎞️ Video Upload':
-    st.markdown('## 🎞️ Video Upload Full Pipeline Demo'); st.markdown('<div class="info-box">Best mode for presentation: it shows dehazing + object detection together without webcam lag.</div>',unsafe_allow_html=True)
+elif app_mode=='Video Upload':
+    st.markdown('## Video Upload Full Pipeline Demo'); st.markdown('<div class="info-box">Best mode for presentation: it shows dehazing + object detection together without webcam lag.</div>',unsafe_allow_html=True)
     uploaded_video=st.file_uploader('Upload a hazy/foggy road video',type=['mp4','avi','mov','mkv'])
     if uploaded_video:
         inp=tempfile.NamedTemporaryFile(delete=False,suffix='.mp4'); inp.write(uploaded_video.read()); inp.close(); st.video(inp.name)
-        if st.button('▶ Process Video'):
+        if st.button('Process Video'):
             cap=cv2.VideoCapture(inp.name); fps=cap.get(cv2.CAP_PROP_FPS); fps=fps if fps and fps>0 else 10; w=int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)); h=int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)); out_path=tempfile.NamedTemporaryFile(delete=False,suffix='.mp4').name; out=cv2.VideoWriter(out_path,cv2.VideoWriter_fourcc(*'mp4v'),max(1,fps/video_frame_skip),(w,h)); prog=st.progress(0); status=st.empty(); preview=st.empty(); idx=0; processed=0; total_det=0; start=time.time()
             while cap.isOpened() and processed<video_max_frames:
                 ret,frame=cap.read();
@@ -186,10 +186,10 @@ elif app_mode=='🎞️ Video Upload':
                 if processed%3==0: preview.image(cv2.cvtColor(final,cv2.COLOR_BGR2RGB),caption=f'Processing frame {processed}',use_container_width=True)
                 prog.progress(min(processed/video_max_frames,1.0)); status.write(f'Processed {processed}/{video_max_frames} frames · Latest detections: {len(dets)}')
             cap.release(); out.release(); total=time.time()-start; st.success('Video processing completed.'); st.video(out_path); m1,m2,m3,m4=st.columns(4); m1.metric('Frames Processed',processed); m2.metric('Total Time',f'{total:.1f}s'); m3.metric('Avg Time / Frame',f'{total/max(processed,1):.2f}s'); m4.metric('Total Detections',total_det)
-            with open(out_path,'rb') as f: st.download_button('⬇ Download Processed Video',data=f,file_name='nextgen_vision_processed_video.mp4',mime='video/mp4')
+            with open(out_path,'rb') as f: st.download_button('Download Processed Video',data=f,file_name='nextgen_vision_processed_video.mp4',mime='video/mp4')
     else: st.info('Upload a road video to process.')
 else:
-    st.markdown('## 📹 Live Camera Prototype'); st.markdown('<div class="warning-box">Live camera is experimental on Streamlit Cloud. Use Video Upload for the stable full pipeline presentation.</div>',unsafe_allow_html=True)
+    st.markdown('## Camera Preview'); st.markdown('<div class="warning-box">Camera preview is included for prototype demonstration. Use Video Upload for the most stable full-pipeline presentation.</div>',unsafe_allow_html=True)
     if not WEBRTC_AVAILABLE: st.error('streamlit-webrtc is not installed. Make sure requirements.txt includes streamlit-webrtc.'); st.stop()
     rtc_config=RTCConfiguration({'iceServers':[{'urls':['stun:stun.l.google.com:19302']}]})
     class LiveProcessor(VideoProcessorBase):
