@@ -7,3 +7,4 @@ Pillow
 gdown
 streamlit-webrtc==0.62.4
 ultralytics
+pandas
