@@ -1,10 +1,11 @@
-streamlit==1.45.1
+streamlit
+opencv-python-headless
 torch
 torchvision
 numpy
+pandas
 Pillow
 gdown
-pandas
-opencv-python-headless==4.10.0.84
-streamlit-webrtc==0.62.4
 ultralytics
+streamlit-webrtc
+av
