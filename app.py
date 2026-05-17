@@ -19,7 +19,7 @@ except Exception:
 st.set_page_config(page_title="NEXTGEN VISION AI", page_icon="N", layout="wide", initial_sidebar_state="expanded")
 
 # ── Backend WebSocket endpoint ──────────────────────────────────────────────
-WS_URL = "ws://172.20.207.169:8000/ws/dehaze"
+WS_URL = "ws://172.20.207.169:8080/ws/dehaze"
 
 st.markdown('''
 <style>
