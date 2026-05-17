@@ -1,12 +1,11 @@
-import os
+import io
 import json
 import time
-import cv2
 import tempfile
 import numpy as np
 import pandas as pd
 import streamlit as st
-import websocket  # websocket-client (sync)
+import websocket
 from PIL import Image
 
 try:
@@ -18,8 +17,7 @@ except Exception:
 
 st.set_page_config(page_title="NEXTGEN VISION AI", page_icon="N", layout="wide", initial_sidebar_state="expanded")
 
-# ── Backend WebSocket endpoint ──────────────────────────────────────────────
-WS_URL = "ws://localhost:8000/ws/dehaze"
+WS_URL = "ws://172.20.207.169:8000/ws/dehaze"
 
 st.markdown('''
 <style>
@@ -30,65 +28,76 @@ html,body,[class*="css"]{font-family:'Inter',sans-serif!important}.stApp{backgro
 </style>
 ''', unsafe_allow_html=True)
 
+# ── Image helpers (zero cv2) ─────────────────────────────────────────────────
+
+def encode_jpg(rgb_array, quality=90):
+    """numpy RGB uint8 array → JPEG bytes."""
+    img = Image.fromarray(rgb_array.astype(np.uint8))
+    buf = io.BytesIO()
+    img.save(buf, format='JPEG', quality=quality)
+    return buf.getvalue()
+
+def decode_jpg(data):
+    """JPEG bytes → numpy RGB uint8 array."""
+    return np.array(Image.open(io.BytesIO(data)).convert('RGB'))
+
+def visibility_score(rgb_array):
+    gray     = np.dot(rgb_array[..., :3].astype(np.float32), [0.2989, 0.5870, 0.1140])
+    contrast = float(gray.std())
+    pad      = np.pad(gray, 1, mode='reflect')
+    lap      = (-4*gray
+                + pad[:-2, 1:-1] + pad[2:, 1:-1]
+                + pad[1:-1, :-2] + pad[1:-1, 2:])
+    sharp    = float(lap.var())
+    score    = min(100, max(0, int(contrast * 1.4 + (max(sharp, 0) ** .5) * 2)))
+    return score, round(contrast, 2), round(sharp, 2)
+
 # ── WebSocket helpers ────────────────────────────────────────────────────────
 
-def _encode_frame(bgr, quality=90):
-    """Encode a BGR frame to JPEG bytes."""
-    _, buf = cv2.imencode('.jpg', bgr, [cv2.IMWRITE_JPEG_QUALITY, quality])
-    return buf.tobytes()
-
-def _decode_frame(data):
-    """Decode JPEG bytes to a BGR frame."""
-    arr = np.frombuffer(data, np.uint8)
-    return cv2.imdecode(arr, cv2.IMREAD_COLOR)
-
-def _build_params(strength, dcp_only, inference_size, enable_detection,
-                  conf_threshold, only_driving_classes, draw_ar_style, mode):
+def build_params(strength, dcp_only, inference_size, enable_detection,
+                 conf_threshold, only_driving_classes, draw_ar_style, mode):
     return json.dumps({
-        "strength": strength,
-        "dcp_only": dcp_only,
-        "inference_size": inference_size,
-        "enable_detection": enable_detection,
-        "conf_threshold": conf_threshold,
+        "strength":             strength,
+        "dcp_only":             dcp_only,
+        "inference_size":       inference_size,
+        "enable_detection":     enable_detection,
+        "conf_threshold":       conf_threshold,
         "only_driving_classes": only_driving_classes,
-        "draw_ar_style": draw_ar_style,
-        "mode": mode,
+        "draw_ar_style":        draw_ar_style,
+        "mode":                 mode,
     })
 
-def process_frame_remote(bgr, strength, dcp_only, inference_size,
+def process_frame_remote(rgb_array, strength, dcp_only, inference_size,
                          enable_detection, conf_threshold,
                          only_driving_classes, draw_ar_style, mode,
                          ws=None, owns_ws=True):
     """
-    Send one frame to the backend and receive:
-      message 1 – JSON metadata  {"dets": [...], "dehaze_time": float, "yolo_time": float}
-      message 2 – JPEG bytes of the dehazed frame
-      message 3 – JPEG bytes of the final annotated frame
-
-    Pass an already-open websocket.WebSocket() as `ws` for video/live loops
-    to avoid reconnecting on every frame.
+    Protocol (per frame):
+      SEND  1: JSON params (text)
+      SEND  2: JPEG bytes of the RGB frame
+      RECV  1: JSON  {"dets":[...], "dehaze_time":float, "yolo_time":float}
+      RECV  2: JPEG  dehazed frame  (RGB)
+      RECV  3: JPEG  annotated final frame  (RGB)
     """
     close_after = False
     if ws is None:
         ws = websocket.WebSocket()
         ws.connect(WS_URL)
         close_after = True
-
     try:
-        params = _build_params(strength, dcp_only, inference_size,
-                               enable_detection, conf_threshold,
-                               only_driving_classes, draw_ar_style, mode)
-        ws.send(params)                        # message 1 → params (text)
-        ws.send_binary(_encode_frame(bgr))     # message 2 → raw frame
+        ws.send(build_params(strength, dcp_only, inference_size,
+                             enable_detection, conf_threshold,
+                             only_driving_classes, draw_ar_style, mode))
+        ws.send_binary(encode_jpg(rgb_array))
 
-        meta   = json.loads(ws.recv())         # ← JSON metadata
-        deh    = _decode_frame(ws.recv())      # ← dehazed JPEG
-        final  = _decode_frame(ws.recv())      # ← annotated JPEG
+        meta      = json.loads(ws.recv())
+        deh_rgb   = decode_jpg(ws.recv())
+        final_rgb = decode_jpg(ws.recv())
 
-        dets           = meta.get("dets", [])
-        dehaze_time    = meta.get("dehaze_time", 0.0)
-        yolo_time      = meta.get("yolo_time", 0.0)
-        return deh, final, dets, dehaze_time, yolo_time
+        return (deh_rgb, final_rgb,
+                meta.get('dets', []),
+                meta.get('dehaze_time', 0.0),
+                meta.get('yolo_time', 0.0))
     finally:
         if close_after:
             ws.close()
@@ -102,21 +111,6 @@ def check_backend():
     except Exception:
         return False
 
-def visibility_score(img_bgr):
-    gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-    contrast = float(gray.std())
-    sharp    = float(cv2.Laplacian(gray, cv2.CV_64F).var())
-    return min(100, max(0, int(contrast * 1.4 + (sharp ** .5) * 2))), round(contrast, 2), round(sharp, 2)
-
-def draw_system_overlay(img_bgr, mode='IMAGE', fps=None, inference_time=None, detection_count=0):
-    out = img_bgr.copy()
-    cv2.putText(out, f'NEXTGEN VISION AI | {mode}', (15, 30), cv2.FONT_HERSHEY_SIMPLEX, .72, (0, 255, 180), 2, cv2.LINE_AA)
-    line = f'Objects: {detection_count}'
-    if fps is not None:            line += f' | FPS: {fps:.1f}'
-    if inference_time is not None: line += f' | Time: {inference_time:.2f}s'
-    cv2.putText(out, line, (15, 60), cv2.FONT_HERSHEY_SIMPLEX, .55, (0, 212, 255), 2, cv2.LINE_AA)
-    return out
-
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown('### System Control')
@@ -124,7 +118,7 @@ with st.sidebar:
     if backend_ok:
         st.success('✅ NVIDIA backend connected')
     else:
-        st.error(f'❌ Backend unreachable at\n`{WS_URL}`')
+        st.error(f'❌ Backend unreachable\n`{WS_URL}`')
     st.markdown('---')
     app_mode = st.radio('Mode', ['Image Upload', 'Video Upload', 'Live Camera'], index=0)
     st.markdown('---'); st.markdown('### Enhancement')
@@ -143,7 +137,7 @@ with st.sidebar:
     st.markdown('<div class="small-note">All inference runs on the NVIDIA backend. Frontend only handles display.</div>', unsafe_allow_html=True)
 
 if not backend_ok:
-    st.error(f'Cannot reach backend at `{WS_URL}`. Start the server on the NVIDIA machine and refresh.')
+    st.error(f'Cannot reach backend at `{WS_URL}`. Start the FastAPI server on the NVIDIA machine and refresh.')
     st.stop()
 
 # ── Header ───────────────────────────────────────────────────────────────────
@@ -162,35 +156,36 @@ c2.markdown(f'<div class="metric-card"><div class="metric-val">{"ON" if enable_d
 c3.markdown(f'<div class="metric-card"><div class="metric-val">{inference_size}px</div><div class="metric-lbl">Inference Size</div></div>', unsafe_allow_html=True)
 c4.markdown(f'<div class="metric-card"><div class="metric-val">{"DCP" if dcp_only else "DCP+ResNet"}</div><div class="metric-lbl">Dehaze Mode</div></div>', unsafe_allow_html=True)
 
-# ── Image Upload ─────────────────────────────────────────────────────────────
+# ── Image Upload ──────────────────────────────────────────────────────────────
 if app_mode == 'Image Upload':
     st.markdown('## Image Enhancement')
-    st.markdown('<div class="info-box">Upload a hazy road image — the frame is sent to the NVIDIA backend and results returned instantly.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="info-box">Upload a hazy road image — sent to the NVIDIA backend, results returned instantly.</div>', unsafe_allow_html=True)
+
     uploaded = st.file_uploader('Upload a hazy/foggy road image', type=['jpg', 'jpeg', 'png'])
     if uploaded:
         rgb = np.array(Image.open(uploaded).convert('RGB'))
-        bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+
         with st.spinner('Sending to NVIDIA backend…'):
             t0 = time.time()
-            deh, final, dets, dt, yt = process_frame_remote(
-                bgr, strength, dcp_only, inference_size,
+            deh_rgb, final_rgb, dets, dt, yt = process_frame_remote(
+                rgb, strength, dcp_only, inference_size,
                 enable_detection, conf_threshold,
                 only_driving_classes, draw_ar_style, 'IMAGE'
             )
             total_time = time.time() - t0
 
         col1, col2, col3 = st.columns(3)
-        col1.image(rgb,                              caption='Original Input',         use_container_width=True)
-        col2.image(cv2.cvtColor(deh,   cv2.COLOR_BGR2RGB), caption='Dehazed Output',          use_container_width=True)
-        col3.image(cv2.cvtColor(final, cv2.COLOR_BGR2RGB), caption='Final AR Detection Output', use_container_width=True)
+        col1.image(rgb,       caption='Original Input',           use_container_width=True)
+        col2.image(deh_rgb,   caption='Dehazed Output',           use_container_width=True)
+        col3.image(final_rgb, caption='Final AR Detection Output', use_container_width=True)
 
-        oscore, _, _ = visibility_score(bgr)
-        escore, _, _ = visibility_score(deh)
+        oscore, _, _ = visibility_score(rgb)
+        escore, _, _ = visibility_score(deh_rgb)
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric('Original Visibility',  f'{oscore}%')
-        m2.metric('Enhanced Visibility',  f'{escore}%')
-        m3.metric('Round-trip Time',      f'{total_time:.2f}s')
-        m4.metric('Objects Detected',     len(dets))
+        m1.metric('Original Visibility', f'{oscore}%')
+        m2.metric('Enhanced Visibility', f'{escore}%')
+        m3.metric('Round-trip Time',     f'{total_time:.2f}s')
+        m4.metric('Objects Detected',    len(dets))
 
         if dets:
             st.dataframe(pd.DataFrame(dets), use_container_width=True)
@@ -199,10 +194,11 @@ if app_mode == 'Image Upload':
     else:
         st.info('Upload an image to start.')
 
-# ── Video Upload ─────────────────────────────────────────────────────────────
+# ── Video Upload ──────────────────────────────────────────────────────────────
 elif app_mode == 'Video Upload':
     st.markdown('## Video Processing')
-    st.markdown('<div class="info-box">Frames are streamed to the NVIDIA backend over a persistent WebSocket — no reconnection overhead per frame.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="info-box">Frames streamed to NVIDIA backend over a persistent WebSocket — no reconnection overhead per frame.</div>', unsafe_allow_html=True)
+
     uploaded_video = st.file_uploader('Upload a hazy/foggy road video', type=['mp4', 'avi', 'mov', 'mkv'])
     if uploaded_video:
         inp = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
@@ -210,56 +206,73 @@ elif app_mode == 'Video Upload':
         st.video(inp.name)
 
         if st.button('Process Video'):
-            cap = cv2.VideoCapture(inp.name)
-            fps = cap.get(cv2.CAP_PROP_FPS); fps = fps if fps and fps > 0 else 10
-            w   = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            h   = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            out_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
-            out = cv2.VideoWriter(out_path, cv2.VideoWriter_fourcc(*'mp4v'),
-                                  max(1, fps / video_frame_skip), (w, h))
+            container  = av.open(inp.name)
+            v_stream   = container.streams.video[0]
+            fps_native = float(v_stream.average_rate) if v_stream.average_rate else 10.0
+            out_fps    = max(1.0, fps_native / video_frame_skip)
+
+            out_path      = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
+            out_container = av.open(out_path, mode='w')
+            out_stream    = out_container.add_stream('mpeg4', rate=int(out_fps))
+            out_stream.pix_fmt = 'yuv420p'
 
             prog    = st.progress(0); status = st.empty(); preview = st.empty()
             idx = processed = total_det = 0
             start = time.time()
 
-            # open one persistent WS for the whole video
             ws = websocket.WebSocket()
             ws.connect(WS_URL)
             try:
-                while cap.isOpened() and processed < video_max_frames:
-                    ret, frame = cap.read()
-                    if not ret: break
-                    idx += 1
-                    if idx % video_frame_skip != 0: continue
+                for packet in container.demux(v_stream):
+                    if processed >= video_max_frames:
+                        break
+                    for frame in packet.decode():
+                        if processed >= video_max_frames:
+                            break
+                        idx += 1
+                        if idx % video_frame_skip != 0:
+                            continue
 
-                    deh, final, dets, dt, yt = process_frame_remote(
-                        frame, strength, dcp_only, inference_size,
-                        enable_detection, conf_threshold,
-                        only_driving_classes, draw_ar_style, 'VIDEO',
-                        ws=ws, owns_ws=False
-                    )
-                    total_det += len(dets)
-                    out.write(final)
-                    processed += 1
+                        rgb = frame.to_ndarray(format='rgb24')
+                        deh_rgb, final_rgb, dets, dt, yt = process_frame_remote(
+                            rgb, strength, dcp_only, inference_size,
+                            enable_detection, conf_threshold,
+                            only_driving_classes, draw_ar_style, 'VIDEO',
+                            ws=ws, owns_ws=False
+                        )
+                        total_det += len(dets)
 
-                    if processed % 3 == 0:
-                        preview.image(cv2.cvtColor(final, cv2.COLOR_BGR2RGB),
-                                      caption=f'Processing frame {processed}',
-                                      use_container_width=True)
-                    prog.progress(min(processed / video_max_frames, 1.0))
-                    status.write(f'Processed {processed}/{video_max_frames} frames · Latest detections: {len(dets)}')
+                        if processed == 0:
+                            out_stream.width  = final_rgb.shape[1]
+                            out_stream.height = final_rgb.shape[0]
+
+                        out_frame = av.VideoFrame.from_ndarray(final_rgb, format='rgb24')
+                        out_frame = out_frame.reformat(format=out_stream.pix_fmt)
+                        for p in out_stream.encode(out_frame):
+                            out_container.mux(p)
+
+                        processed += 1
+                        if processed % 3 == 0:
+                            preview.image(final_rgb,
+                                          caption=f'Processing frame {processed}',
+                                          use_container_width=True)
+                        prog.progress(min(processed / video_max_frames, 1.0))
+                        status.write(f'Processed {processed}/{video_max_frames} frames · Detections: {len(dets)}')
             finally:
+                for p in out_stream.encode():
+                    out_container.mux(p)
+                out_container.close()
+                container.close()
                 ws.close()
-                cap.release(); out.release()
 
             total = time.time() - start
             st.success('Video processing completed.')
             st.video(out_path)
             m1, m2, m3, m4 = st.columns(4)
-            m1.metric('Frames Processed',    processed)
-            m2.metric('Total Time',          f'{total:.1f}s')
-            m3.metric('Avg Time / Frame',    f'{total / max(processed, 1):.2f}s')
-            m4.metric('Total Detections',    total_det)
+            m1.metric('Frames Processed', processed)
+            m2.metric('Total Time',       f'{total:.1f}s')
+            m3.metric('Avg Time / Frame', f'{total / max(processed, 1):.2f}s')
+            m4.metric('Total Detections', total_det)
             with open(out_path, 'rb') as f:
                 st.download_button('Download Processed Video', data=f,
                                    file_name='nextgen_vision_processed_video.mp4',
@@ -270,23 +283,22 @@ elif app_mode == 'Video Upload':
 # ── Live Camera ───────────────────────────────────────────────────────────────
 else:
     st.markdown('## Camera Preview')
-    st.markdown('<div class="warning-box">Live frames are sent to the NVIDIA backend per frame. Use Video Upload for the most stable full-pipeline demo.</div>', unsafe_allow_html=True)
+    st.markdown('<div class="warning-box">Live frames are sent to the NVIDIA backend. Use Video Upload for the most stable full-pipeline demo.</div>', unsafe_allow_html=True)
 
     if not WEBRTC_AVAILABLE:
-        st.error('streamlit-webrtc is not installed. Add it to requirements.txt.')
+        st.error('streamlit-webrtc not installed. Add it to requirements.txt.')
         st.stop()
 
     rtc_config = RTCConfiguration({'iceServers': [{'urls': ['stun:stun.l.google.com:19302']}]})
 
     class LiveProcessor(VideoProcessorBase):
         def __init__(self):
-            self.last_time   = time.time()
-            self.fps         = 0.
-            self.frame_count = 0
+            self.last_time    = time.time()
+            self.fps          = 0.
+            self.frame_count  = 0
             self.cached_final = None
             self.cached_dets  = []
-            # persistent WS per processor instance
-            self._ws = None
+            self._ws          = None
             self._connect()
 
         def _connect(self):
@@ -297,37 +309,35 @@ else:
                 self._ws = None
 
         def recv(self, frame):
-            img   = frame.to_ndarray(format='bgr24')
+            rgb   = frame.to_ndarray(format='rgb24')
             start = time.time()
             try:
                 if self._ws is None:
                     self._connect()
                 self.frame_count += 1
-                # run detection every 5th frame to keep latency low
                 run_det = enable_detection and (self.frame_count % 5 == 0)
-                deh, final, dets, _, _ = process_frame_remote(
-                    img, strength, dcp_only, 128,
+                deh_rgb, final_rgb, dets, _, _ = process_frame_remote(
+                    rgb, strength, dcp_only, 128,
                     run_det, conf_threshold,
                     only_driving_classes, draw_ar_style, 'LIVE',
                     ws=self._ws, owns_ws=False
                 )
                 if run_det:
-                    self.cached_final = final.copy()
+                    self.cached_final = final_rgb.copy()
                     self.cached_dets  = dets
                 elif self.cached_final is not None:
-                    final = self.cached_final.copy()
-                    dets  = self.cached_dets
+                    final_rgb = self.cached_final.copy()
                 else:
-                    final = deh; dets = []
+                    final_rgb = deh_rgb
 
                 now = time.time(); dt = now - self.last_time
                 self.last_time = now
-                self.fps       = 1 / dt if dt > 0 else self.fps
-                final = draw_system_overlay(final, 'LIVE', self.fps, time.time() - start, len(dets))
+                self.fps = 1 / dt if dt > 0 else self.fps
             except Exception:
-                final = img
-                self._connect()   # attempt reconnect on error
-            return av.VideoFrame.from_ndarray(final, format='bgr24')
+                final_rgb = rgb
+                self._connect()
+
+            return av.VideoFrame.from_ndarray(final_rgb, format='rgb24')
 
     webrtc_streamer(
         key='nextgen-live-camera',
@@ -343,6 +353,6 @@ else:
 
 # ── Diagnostics ───────────────────────────────────────────────────────────────
 with st.expander('System Diagnostics'):
-    st.write('Backend URL:', WS_URL)
+    st.write('Backend URL:',       WS_URL)
     st.write('Backend reachable:', backend_ok)
-    st.write('WebRTC available:', WEBRTC_AVAILABLE)
+    st.write('WebRTC available:',  WEBRTC_AVAILABLE)
