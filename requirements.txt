@@ -1,12 +1,8 @@
 streamlit
 opencv-python-headless
-torch
-torchvision
 numpy
 pandas
 Pillow
-gdown
-ultralytics
+websocket-client
 streamlit-webrtc
 av
-websocket-client
