@@ -9,3 +9,4 @@ gdown
 ultralytics
 streamlit-webrtc
 av
+websocket-client
