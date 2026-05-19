@@ -4,7 +4,7 @@ Pillow
 requests
 torch
 torchvision
-opencv-python-headless==4.8.1.78
+opencv-python-headless
 gdown
 ultralytics
 streamlit-webrtc
