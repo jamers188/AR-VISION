@@ -1,12 +1,11 @@
-streamlit
-opencv-python-headless==4.8.1.78
-gdown
-torch
-torchvision
 numpy
 pandas
 Pillow
 requests
+torch
+torchvision
+opencv-python-headless==4.8.1.78
+gdown
 ultralytics
 streamlit-webrtc
 av
