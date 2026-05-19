@@ -1,18 +1,43 @@
 import os
+import sys
 import time
-import cv2
-import gdown
-import torch
 import tempfile
-import numpy as np
-import pandas as pd
-import streamlit as st
-import torch.nn as nn
-import torch.nn.functional as F
-import requests
 import math
 from datetime import datetime
-from PIL import Image
+
+import numpy as np
+import pandas as pd
+import requests
+import streamlit as st
+
+# ─────────────────────────────────────────────
+# SAFE HEAVY IMPORTS
+# ─────────────────────────────────────────────
+try:
+    import cv2
+    CV2_AVAILABLE = True
+except Exception as e:
+    CV2_AVAILABLE = False
+
+try:
+    import torch
+    import torch.nn as nn
+    import torch.nn.functional as F
+    TORCH_AVAILABLE = True
+except Exception as e:
+    TORCH_AVAILABLE = False
+
+try:
+    import gdown
+    GDOWN_AVAILABLE = True
+except Exception:
+    GDOWN_AVAILABLE = False
+
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except Exception:
+    PIL_AVAILABLE = False
 
 try:
     from ultralytics import YOLO
@@ -30,9 +55,9 @@ except Exception:
 # ─────────────────────────────────────────────
 # CONFIG
 # ─────────────────────────────────────────────
-DEHAZE_MODEL_PATH = "remove_hazy_model_256x256.pth"
-DEHAZE_GDRIVE_ID  = "1ji3x-KO19X2yGpT7oaUIpJ5DiCgQg8xS"
-YOLO_MODEL_NAME   = "yolov8n.pt"
+DEHAZE_MODEL_PATH   = "remove_hazy_model_256x256.pth"
+DEHAZE_GDRIVE_ID    = "1ji3x-KO19X2yGpT7oaUIpJ5DiCgQg8xS"
+YOLO_MODEL_NAME     = "yolov8n.pt"
 OPENWEATHER_API_KEY = os.environ.get("OPENWEATHER_API_KEY", "b418c8e85a223c25761a2ab362221033")
 
 DRIVING_CLASSES = {
@@ -48,7 +73,23 @@ st.set_page_config(
 )
 
 # ─────────────────────────────────────────────
-# GLOBAL CSS  (unchanged from original)
+# BOOT CHECKS — show readable errors if deps missing
+# ─────────────────────────────────────────────
+if not CV2_AVAILABLE:
+    st.error("❌ OpenCV (cv2) failed to import. Check packages.txt contains libgl1-mesa-glx and libglib2.0-0.")
+    st.info("Add a packages.txt to your repo root with:\nlibgl1-mesa-glx\nlibglib2.0-0\nlibsm6\nlibxext6\nlibxrender-dev\nlibgomp1")
+    st.stop()
+
+if not TORCH_AVAILABLE:
+    st.error("❌ PyTorch failed to import. Check requirements.txt.")
+    st.stop()
+
+if not PIL_AVAILABLE:
+    st.error("❌ Pillow failed to import.")
+    st.stop()
+
+# ─────────────────────────────────────────────
+# GLOBAL CSS
 # ─────────────────────────────────────────────
 st.markdown("""
 <style>
@@ -278,7 +319,7 @@ def render_weather_sidebar(weather_data, city):
     vis   = weather_data.get("visibility", 10000) // 1000
     desc  = weather_data["weather"][0]["description"].upper()
     cond, severity, icon = weather_to_road_condition(weather_data)
-    alert_cls = "nv-weather-alert" if severity in ("medium","high") else "nv-weather-safe"
+    alert_cls = "nv-weather-alert" if severity in ("medium", "high") else "nv-weather-safe"
     alert_msg = {
         "high":   f"⚠️ HIGH RISK — {cond}. Dehazing active.",
         "medium": f"⚡ MODERATE — {cond}. Stay alert.",
@@ -328,7 +369,7 @@ def draw_nav_hud(frame_bgr, frame_idx, total_frames, route_name="Demo Route"):
     cv2.rectangle(out, (x1, y1), (x1 + box_w, y1 + box_h), (0, 255, 180), 1)
     cv2.line(out, (x1, y1), (x1 + box_w, y1), (0, 255, 180), 2)
     ax, ay = x1 + 22, y1 + 44
-    arrow_pts = np.array([[ax, ay-16],[ax-12, ay+8],[ax+12, ay+8]], np.int32)
+    arrow_pts = np.array([[ax, ay - 16], [ax - 12, ay + 8], [ax + 12, ay + 8]], np.int32)
     cv2.fillPoly(out, [arrow_pts], (0, 255, 180))
     cv2.putText(out, wp_text[:28], (x1 + 42, y1 + 32),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.42, (238, 244, 255), 1, cv2.LINE_AA)
@@ -350,7 +391,7 @@ def draw_nav_hud(frame_bgr, frame_idx, total_frames, route_name="Demo Route"):
 def topbar(page: str):
     parts = page.split("/")
     path_html = " <span style='color:#2e4455'>/</span> ".join(
-        [f"<span style='color:#00ffb4'>{p}</span>" if i == len(parts)-1
+        [f"<span style='color:#00ffb4'>{p}</span>" if i == len(parts) - 1
          else f"<span style='color:#2e4455'>{p}</span>"
          for i, p in enumerate(parts)]
     )
@@ -382,7 +423,7 @@ def hero():
     </div>""", unsafe_allow_html=True)
 
 def metric_cards(device, enable_detection, inference_size):
-    yolo_val = "ON" if enable_detection else "OFF"
+    yolo_val = "ON"  if enable_detection else "OFF"
     yolo_sub = "conf ≥ 0.35" if enable_detection else "disabled"
     st.markdown(f"""
     <div class="nv-metrics">
@@ -451,10 +492,10 @@ def vis_bars(orig_score, enh_score, proc_time, det_count):
     </div>""", unsafe_allow_html=True)
 
 def sidebar_logo(dehaze_ready: bool, yolo_ready: bool):
-    dehaze_dot = "nv-dot-ok" if dehaze_ready else "nv-dot-warn"
-    yolo_dot   = "nv-dot-ok" if yolo_ready   else "nv-dot-off"
-    dehaze_txt = "Dehazing model — ready" if dehaze_ready else "Dehazing model — missing"
-    yolo_txt   = "YOLOv8 — available"    if yolo_ready   else "YOLOv8 — not installed"
+    dehaze_dot = "nv-dot-ok"   if dehaze_ready else "nv-dot-warn"
+    yolo_dot   = "nv-dot-ok"   if yolo_ready   else "nv-dot-off"
+    dehaze_txt = "Dehazing model — ready"   if dehaze_ready else "Dehazing model — missing"
+    yolo_txt   = "YOLOv8 — available"       if yolo_ready   else "YOLOv8 — not installed"
     st.markdown(f"""
     <div class="nv-logo">
       <div class="nv-logo-n">N</div>
@@ -484,7 +525,7 @@ def render_trip_analytics(analytics: dict, weather_data=None):
     det_history  = analytics.get("detection_history", [])
     class_counts = analytics.get("class_counts", {})
 
-    fog_pct = max(0, 100 - avg_orig_vis)
+    fog_pct   = max(0, 100 - avg_orig_vis)
     fog_label = "SEVERE" if fog_pct > 60 else "MODERATE" if fog_pct > 30 else "LIGHT"
     fog_color = "#ff6b35" if fog_pct > 60 else "#ffd700" if fog_pct > 30 else "#00ffb4"
 
@@ -509,7 +550,7 @@ def render_trip_analytics(analytics: dict, weather_data=None):
 
     if vis_history:
         chart_df = pd.DataFrame({
-            "Frame":    list(range(len(vis_history))),
+            "Frame": list(range(len(vis_history))),
             "Original Visibility (%)": [v[0] for v in vis_history],
             "Enhanced Visibility (%)": [v[1] for v in vis_history],
         }).set_index("Frame")
@@ -518,7 +559,7 @@ def render_trip_analytics(analytics: dict, weather_data=None):
 
     if det_history:
         det_df = pd.DataFrame({
-            "Frame":            list(range(len(det_history))),
+            "Frame": list(range(len(det_history))),
             "Objects Detected": det_history,
         }).set_index("Frame")
         st.markdown('<div style="margin-top:16px;margin-bottom:8px"><span style="font-size:9px;font-family:Space Mono,monospace;letter-spacing:0.18em;color:#2e4455;text-transform:uppercase">Object Detections Per Frame</span></div>', unsafe_allow_html=True)
@@ -543,9 +584,12 @@ def render_trip_analytics(analytics: dict, weather_data=None):
 def download_dehaze_model_if_needed():
     if os.path.exists(DEHAZE_MODEL_PATH):
         return True, None
+    if not GDOWN_AVAILABLE:
+        return False, "gdown not installed"
     try:
         gdown.download(f"https://drive.google.com/uc?id={DEHAZE_GDRIVE_ID}", DEHAZE_MODEL_PATH, quiet=False)
-        return (os.path.exists(DEHAZE_MODEL_PATH), None if os.path.exists(DEHAZE_MODEL_PATH) else "Downloaded but file not found")
+        exists = os.path.exists(DEHAZE_MODEL_PATH)
+        return exists, None if exists else "Downloaded but file not found"
     except Exception as e:
         return False, str(e)
 
@@ -554,7 +598,7 @@ class GuidedFilter(nn.Module):
         super().__init__()
         self.r = r
         self.eps = eps
-        self.boxfilter = nn.AvgPool2d(kernel_size=2*r+1, stride=1, padding=r)
+        self.boxfilter = nn.AvgPool2d(kernel_size=2 * r + 1, stride=1, padding=r)
 
     def forward(self, I, p):
         N       = self.boxfilter(torch.ones(p.size(), device=p.device, dtype=p.dtype))
@@ -579,7 +623,7 @@ class DCPDehazeGenerator(nn.Module):
         img, _ = torch.min(img, dim=1)
         img = torch.unsqueeze(img, dim=1)
         p = int(np.floor(w / 2))
-        pads = [p, p-1, p, p-1] if w % 2 == 0 else [p, p, p, p]
+        pads = [p, p - 1, p, p - 1] if w % 2 == 0 else [p, p, p, p]
         return -F.max_pool2d(-F.pad(img, pads, mode='replicate'), kernel_size=w, stride=1)
 
     def atmospheric_light(self, img, dark_img):
@@ -593,15 +637,15 @@ class DCPDehazeGenerator(nn.Module):
         return A
 
     def forward(self, x):
-        guidance = (0.2989*x[:,0] + 0.5870*x[:,1] + 0.1140*x[:,2]) if x.shape[1] > 1 else x[:,0]
+        guidance = (0.2989 * x[:, 0] + 0.5870 * x[:, 1] + 0.1140 * x[:, 2]) if x.shape[1] > 1 else x[:, 0]
         guidance = torch.unsqueeze((guidance + 1) / 2, 1)
         img = (x + 1) / 2
         _, _, h, w = img.shape
-        dark = self.get_dark_channel(img, self.neighborhood_size)
-        A = self.atmospheric_light(img, dark)
+        dark  = self.get_dark_channel(img, self.neighborhood_size)
+        A     = self.atmospheric_light(img, dark)
         map_A = A.repeat(1, 1, h, w).clamp(min=1e-6)
         trans = (1 - self.omega * self.get_dark_channel(img / map_A, self.neighborhood_size)).clamp(0.05, 1.0)
-        T = self.guided_filter(guidance, trans).clamp(0.05, 1.0)
+        T     = self.guided_filter(guidance, trans).clamp(0.05, 1.0)
         return ((img - map_A) / T.repeat(1, 3, 1, 1) + map_A).clamp(0, 1)
 
 class ResnetBlock(nn.Module):
@@ -636,15 +680,15 @@ class ResnetGenerator(nn.Module):
                  nn.Conv2d(input_nc, ngf, 7, padding=0, bias=use_bias),
                  norm_layer(ngf), nn.ReLU(True)]
         for i in range(2):
-            m = 2**i
-            model += [nn.Conv2d(ngf*m, ngf*m*2, 3, 2, 1, bias=use_bias),
-                      norm_layer(ngf*m*2), nn.ReLU(True)]
+            m = 2 ** i
+            model += [nn.Conv2d(ngf * m, ngf * m * 2, 3, 2, 1, bias=use_bias),
+                      norm_layer(ngf * m * 2), nn.ReLU(True)]
         for _ in range(n_blocks):
-            model += [ResnetBlock(ngf*4, padding_type, norm_layer, use_dropout, use_bias)]
+            model += [ResnetBlock(ngf * 4, padding_type, norm_layer, use_dropout, use_bias)]
         for i in range(2):
-            m = 2**(2-i)
-            model += [nn.ConvTranspose2d(ngf*m, ngf*m//2, 3, 2, 1, output_padding=1, bias=use_bias),
-                      norm_layer(ngf*m//2), nn.ReLU(True)]
+            m = 2 ** (2 - i)
+            model += [nn.ConvTranspose2d(ngf * m, ngf * m // 2, 3, 2, 1, output_padding=1, bias=use_bias),
+                      norm_layer(ngf * m // 2), nn.ReLU(True)]
         model += [nn.ReflectionPad2d(3),
                   nn.Conv2d(ngf, output_nc, 7, padding=0, bias=use_bias),
                   nn.Tanh()]
@@ -662,20 +706,28 @@ def load_dehaze_models():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     dcp    = DCPDehazeGenerator().to(device).eval()
     resnet = ResnetGenerator(3, 3, norm_layer=nn.InstanceNorm2d).to(device)
-    ckpt   = torch.load(DEHAZE_MODEL_PATH, map_location=device)
-    if isinstance(ckpt, dict):
-        key = next((k for k in ['params', 'state_dict', 'model', 'net_g', 'generator'] if k in ckpt), None)
-        sd  = ckpt[key] if key else ckpt
-    else:
-        sd = ckpt
-    sd = {k.replace('module.', ''): v for k, v in sd.items()}
-    missing, unexpected = resnet.load_state_dict(sd, strict=False)
+    try:
+        ckpt = torch.load(DEHAZE_MODEL_PATH, map_location=device)
+        if isinstance(ckpt, dict):
+            key = next((k for k in ['params', 'state_dict', 'model', 'net_g', 'generator'] if k in ckpt), None)
+            sd  = ckpt[key] if key else ckpt
+        else:
+            sd = ckpt
+        sd = {k.replace('module.', ''): v for k, v in sd.items()}
+        missing, unexpected = resnet.load_state_dict(sd, strict=False)
+    except Exception as e:
+        missing, unexpected = [str(e)], []
     resnet.eval()
     return dcp, resnet, device, missing, unexpected
 
 @st.cache_resource(show_spinner=False)
 def load_yolo_model():
-    return YOLO(YOLO_MODEL_NAME) if YOLO_AVAILABLE else None
+    if not YOLO_AVAILABLE:
+        return None
+    try:
+        return YOLO(YOLO_MODEL_NAME)
+    except Exception:
+        return None
 
 
 # ─────────────────────────────────────────────
@@ -705,9 +757,9 @@ def detect_objects_yolo(img_bgr, conf_threshold=0.35, only_driving_classes=True,
     model = load_yolo_model()
     if model is None:
         return img_bgr, []
-    results   = model(img_bgr, conf=conf_threshold, verbose=False)
-    result    = results[0]
-    annotated = img_bgr.copy()
+    results    = model(img_bgr, conf=conf_threshold, verbose=False)
+    result     = results[0]
+    annotated  = img_bgr.copy()
     detections = []
 
     if result.boxes is None:
@@ -731,10 +783,10 @@ def detect_objects_yolo(img_bgr, conf_threshold=0.35, only_driving_classes=True,
         cv2.rectangle(annotated, (x1, y1), (x2, y2), color, 2)
         label   = f"{name.upper()} {conf_v:.2f}"
         label_y = max(y1 - 10, 25)
-        cv2.rectangle(annotated, (x1, label_y-22), (x1 + max(120, len(label)*11), label_y+4), color, -1)
-        cv2.putText(annotated, label, (x1+5, label_y-4),
+        cv2.rectangle(annotated, (x1, label_y - 22), (x1 + max(120, len(label) * 11), label_y + 4), color, -1)
+        cv2.putText(annotated, label, (x1 + 5, label_y - 4),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.55, (5, 10, 18), 2, cv2.LINE_AA)
-        cv2.circle(annotated, ((x1+x2)//2, (y1+y2)//2), 4, color, -1)
+        cv2.circle(annotated, ((x1 + x2) // 2, (y1 + y2) // 2), 4, color, -1)
 
     return annotated, detections
 
@@ -742,7 +794,7 @@ def draw_system_overlay(img_bgr, mode='IMAGE', fps=None, inference_time=None, de
     out = img_bgr.copy()
     cv2.putText(out, f'NEXTGEN VISION AI | {mode}', (15, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.72, (0, 255, 180), 2, cv2.LINE_AA)
-    line = f'Objects: {detection_count}'
+    line  = f'Objects: {detection_count}'
     line += f' | FPS: {fps:.1f}' if fps is not None else ''
     line += f' | Time: {inference_time:.2f}s' if inference_time is not None else ''
     cv2.putText(out, line, (15, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 200, 255), 2, cv2.LINE_AA)
@@ -780,7 +832,7 @@ def process_pipeline(frame, strength, dcp_only, inference_size, enable_detection
     yt = time.time() - t1
     if show_nav:
         final = draw_nav_hud(final, frame_idx, total_frames, route_name)
-    final = draw_system_overlay(final, mode=mode, inference_time=dt+yt, detection_count=len(dets))
+    final = draw_system_overlay(final, mode=mode, inference_time=dt + yt, detection_count=len(dets))
     return dehazed, final, dets, dt, yt
 
 
@@ -793,7 +845,6 @@ with st.sidebar:
         yolo_ready=YOLO_AVAILABLE,
     )
 
-    # ── Weather ──────────────────────────────
     st.markdown('<div class="nv-section-label">Live Weather</div>', unsafe_allow_html=True)
     weather_city    = st.text_input("City", value="Dubai", label_visibility="collapsed",
                                     placeholder="Enter city (e.g. Dubai)")
@@ -816,20 +867,20 @@ with st.sidebar:
     )
 
     st.markdown('<div class="nv-section-label">Enhancement</div>', unsafe_allow_html=True)
-    strength       = st.slider('Enhancement strength',  0.0, 1.0, 1.0, 0.05)
-    dcp_only       = st.toggle('DCP only mode',        value=False)
+    strength       = st.slider('Enhancement strength', 0.0, 1.0, 1.0, 0.05)
+    dcp_only       = st.toggle('DCP only mode', value=False)
     inference_size = st.selectbox('Inference size (px)', [128, 192, 256], index=1)
 
     st.markdown('<div class="nv-section-label">Object Detection</div>', unsafe_allow_html=True)
-    enable_detection      = st.toggle('Enable YOLO detection',   value=True)
-    conf_threshold        = st.slider('Confidence threshold',  0.10, 0.90, 0.35, 0.05)
-    only_driving_classes  = st.toggle('Driving classes only',    value=True)
-    draw_ar_style         = st.toggle('AR-style overlay',        value=True)
+    enable_detection     = st.toggle('Enable YOLO detection', value=True)
+    conf_threshold       = st.slider('Confidence threshold', 0.10, 0.90, 0.35, 0.05)
+    only_driving_classes = st.toggle('Driving classes only', value=True)
+    draw_ar_style        = st.toggle('AR-style overlay', value=True)
 
     st.markdown('<div class="nv-section-label">Navigation HUD</div>', unsafe_allow_html=True)
     show_nav_hud = st.toggle('Show Nav HUD overlay', value=True)
     route_name   = st.text_input("Route name", value="Highway Demo", label_visibility="collapsed",
-                                  placeholder="Route name")
+                                 placeholder="Route name")
 
     st.markdown('<div class="nv-section-label">Video Settings</div>', unsafe_allow_html=True)
     video_max_frames   = st.slider('Max frames to process', 10, 180, 60, 10)
@@ -838,7 +889,7 @@ with st.sidebar:
 
     st.markdown('<div class="nv-section-label">Live Camera</div>', unsafe_allow_html=True)
     dehaze_every = st.slider('Dehaze every N frames', 1, 6, 3, 1,
-                              help="1=every frame (slow), 3=smooth ~8fps")
+                             help="1=every frame (slow), 3=smooth ~8fps")
 
     st.markdown("""
     <div style="padding:16px 20px 20px;font-size:10px;font-family:'Space Mono',monospace;
@@ -938,8 +989,10 @@ if app_mode == 'Image Upload':
             _, oc, osh = visibility_score(bgr)
             _, ec, esh = visibility_score(deh)
             st.json({
-                "original_contrast":  oc,  "enhanced_contrast":  ec,
-                "original_sharpness": osh, "enhanced_sharpness": esh,
+                "original_contrast":  oc,
+                "enhanced_contrast":  ec,
+                "original_sharpness": osh,
+                "enhanced_sharpness": esh,
                 "dehaze_seconds":     round(dt, 3),
                 "detect_seconds":     round(yt, 3),
                 "total_seconds":      round(dt + yt, 3),
@@ -964,6 +1017,9 @@ if app_mode == 'Image Upload':
     with st.expander('System Diagnostics'):
         st.markdown(f"""
         <div style="font-family:'Space Mono',monospace;font-size:11px;color:#4a6070;line-height:2">
+        Python: {sys.version}<br>
+        Torch: {torch.__version__}<br>
+        CV2 available: {CV2_AVAILABLE}<br>
         Dehazing missing keys: {len(missing_keys)}<br>
         Dehazing unexpected keys: {len(unexpected_keys)}<br>
         YOLO available: {YOLO_AVAILABLE}<br>
@@ -1001,14 +1057,14 @@ elif app_mode == 'Video Upload':
         st.video(inp.name)
 
         if st.button('⚡ PROCESS VIDEO + GENERATE ANALYTICS', use_container_width=False):
-            cap = cv2.VideoCapture(inp.name)
+            cap     = cv2.VideoCapture(inp.name)
             fps_vid = cap.get(cv2.CAP_PROP_FPS)
             fps_vid = fps_vid if fps_vid and fps_vid > 0 else 10
-            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            w       = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h       = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
             total_cap_frames  = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            total_proc_frames = min(video_max_frames, total_cap_frames // video_frame_skip)
+            total_proc_frames = min(video_max_frames, max(1, total_cap_frames // video_frame_skip))
 
             out_w    = (w * 2 + 4) if split_screen_video else w
             out_path = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4').name
@@ -1022,8 +1078,8 @@ elif app_mode == 'Video Upload':
             preview = st.empty()
 
             idx = processed = total_det = 0
-            vis_history = []
-            det_history = []
+            vis_history  = []
+            det_history  = []
             class_counts = {}
             start = time.time()
 
@@ -1077,7 +1133,7 @@ elif app_mode == 'Video Upload':
             c1, c2, c3, c4 = st.columns(4)
             c1.metric('Frames Processed', processed)
             c2.metric('Total Time',        f'{total_time:.1f}s')
-            c3.metric('Avg / Frame',       f'{total_time/max(processed,1):.2f}s')
+            c3.metric('Avg / Frame',       f'{total_time / max(processed, 1):.2f}s')
             c4.metric('Total Detections',  total_det)
 
             with open(out_path, 'rb') as f:
@@ -1129,115 +1185,118 @@ else:
     warn_box("Live camera uses WebRTC. If the stream doesn't connect, try a different browser or network.")
 
     if not WEBRTC_AVAILABLE:
-        st.error('streamlit-webrtc is not installed. Add it to requirements.txt.')
-        st.stop()
+        st.error('streamlit-webrtc or av is not installed / failed to import. Check requirements.txt and logs.')
+        st.markdown("""
+        <div class="nv-info">
+        ℹ &nbsp; You can still use <b>Image Upload</b> and <b>Video Upload</b> modes — live camera requires streamlit-webrtc and av.
+        </div>""", unsafe_allow_html=True)
+    else:
+        rtc_config = RTCConfiguration({
+            "iceServers": [
+                {"urls": ["stun:stun.l.google.com:19302"]},
+                {
+                    "urls": ["turn:openrelay.metered.ca:80"],
+                    "username": "openrelayproject",
+                    "credential": "openrelayproject",
+                },
+                {
+                    "urls": ["turn:openrelay.metered.ca:443"],
+                    "username": "openrelayproject",
+                    "credential": "openrelayproject",
+                },
+            ]
+        })
 
-    rtc_config = RTCConfiguration({
-        "iceServers": [
-            {"urls": ["stun:stun.l.google.com:19302"]},
-            {
-                "urls": ["turn:openrelay.metered.ca:80"],
-                "username": "openrelayproject",
-                "credential": "openrelayproject",
-            },
-            {
-                "urls": ["turn:openrelay.metered.ca:443"],
-                "username": "openrelayproject",
-                "credential": "openrelayproject",
-            },
-        ]
-    })
+        _cfg = {
+            "strength":     strength,
+            "dcp_only":     dcp_only,
+            "size":         inference_size,
+            "enable_det":   enable_detection,
+            "conf":         conf_threshold,
+            "driving_only": only_driving_classes,
+            "ar_style":     draw_ar_style,
+            "dehaze_every": dehaze_every,
+            "show_nav":     show_nav_hud,
+            "route_name":   route_name,
+        }
 
-    _cfg = {
-        "strength":     strength,
-        "dcp_only":     dcp_only,
-        "size":         inference_size,
-        "enable_det":   enable_detection,
-        "conf":         conf_threshold,
-        "driving_only": only_driving_classes,
-        "ar_style":     draw_ar_style,
-        "dehaze_every": dehaze_every,
-        "show_nav":     show_nav_hud,
-        "route_name":   route_name,
-    }
+        class LiveProcessor(VideoProcessorBase):
+            def __init__(self):
+                self.dcp, self.resnet, self.device, _, _ = load_dehaze_models()
+                self.yolo         = load_yolo_model()
+                self.frame_count  = 0
+                self.last_dehazed = None
+                self.last_dets    = []
+                self.last_time    = time.time()
+                self.fps          = 0.0
 
-    class LiveProcessor(VideoProcessorBase):
-        def __init__(self):
-            self.dcp, self.resnet, self.device, _, _ = load_dehaze_models()
-            self.yolo         = load_yolo_model()
-            self.frame_count  = 0
-            self.last_dehazed = None
-            self.last_dets    = []
-            self.last_time    = time.time()
-            self.fps          = 0.0
+            def recv(self, frame):
+                img = frame.to_ndarray(format='bgr24')
+                self.frame_count += 1
+                cfg = _cfg
 
-        def recv(self, frame):
-            img = frame.to_ndarray(format='bgr24')
-            self.frame_count += 1
-            cfg = _cfg
+                try:
+                    if self.frame_count % cfg["dehaze_every"] == 0 or self.last_dehazed is None:
+                        x = bgr_to_tensor(img, cfg["size"]).to(self.device)
+                        with torch.no_grad():
+                            dcp_out = self.dcp(x)
+                            refined = dcp_out if cfg["dcp_only"] else (self.resnet(dcp_out) + 1) / 2
+                        h, w = img.shape[:2]
+                        self.last_dehazed = tensor_to_bgr(refined, (h, w))
+                        if cfg["strength"] < 1.0:
+                            self.last_dehazed = cv2.addWeighted(
+                                img, 1.0 - cfg["strength"],
+                                self.last_dehazed, cfg["strength"], 0
+                            )
 
-            try:
-                if self.frame_count % cfg["dehaze_every"] == 0 or self.last_dehazed is None:
-                    x = bgr_to_tensor(img, cfg["size"]).to(self.device)
-                    with torch.no_grad():
-                        dcp_out = self.dcp(x)
-                        refined = dcp_out if cfg["dcp_only"] else (self.resnet(dcp_out) + 1) / 2
-                    h, w = img.shape[:2]
-                    self.last_dehazed = tensor_to_bgr(refined, (h, w))
-                    if cfg["strength"] < 1.0:
-                        self.last_dehazed = cv2.addWeighted(
-                            img, 1.0 - cfg["strength"],
-                            self.last_dehazed, cfg["strength"], 0
+                    if cfg["enable_det"] and self.yolo is not None:
+                        final, self.last_dets = detect_objects_yolo(
+                            self.last_dehazed.copy(),
+                            cfg["conf"], cfg["driving_only"], cfg["ar_style"]
                         )
+                    else:
+                        final          = self.last_dehazed.copy()
+                        self.last_dets = []
 
-                if cfg["enable_det"] and self.yolo is not None:
-                    final, self.last_dets = detect_objects_yolo(
-                        self.last_dehazed.copy(),
-                        cfg["conf"], cfg["driving_only"], cfg["ar_style"]
+                    if cfg["show_nav"]:
+                        final = draw_nav_hud(final, self.frame_count % 300, 300, cfg["route_name"])
+
+                    now = time.time()
+                    dt  = now - self.last_time
+                    self.last_time = now
+                    self.fps = 1.0 / dt if dt > 0 else self.fps
+
+                    final = draw_system_overlay(
+                        final, mode=f"LIVE (dehaze/{cfg['dehaze_every']}f)",
+                        fps=self.fps, detection_count=len(self.last_dets)
                     )
-                else:
-                    final          = self.last_dehazed.copy()
-                    self.last_dets = []
 
-                if cfg["show_nav"]:
-                    final = draw_nav_hud(final, self.frame_count % 300, 300, cfg["route_name"])
+                except Exception as e:
+                    final = img.copy()
+                    cv2.putText(final, f"Error: {str(e)[:60]}", (15, 35),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2, cv2.LINE_AA)
 
-                now = time.time()
-                dt  = now - self.last_time
-                self.last_time = now
-                self.fps = 1.0 / dt if dt > 0 else self.fps
+                return av.VideoFrame.from_ndarray(final, format='bgr24')
 
-                final = draw_system_overlay(
-                    final, mode=f"LIVE (dehaze/{cfg['dehaze_every']}f)",
-                    fps=self.fps, detection_count=len(self.last_dets)
-                )
-
-            except Exception as e:
-                final = img.copy()
-                cv2.putText(final, f"Error: {str(e)[:60]}", (15, 35),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2, cv2.LINE_AA)
-
-            return av.VideoFrame.from_ndarray(final, format='bgr24')
-
-    webrtc_streamer(
-        key='nextgen-live-camera',
-        video_processor_factory=LiveProcessor,
-        rtc_configuration=rtc_config,
-        media_stream_constraints={
-            'video': {
-                'width':     {'ideal': 640},
-                'height':    {'ideal': 480},
-                'frameRate': {'ideal': 10, 'max': 15},
+        webrtc_streamer(
+            key='nextgen-live-camera',
+            video_processor_factory=LiveProcessor,
+            rtc_configuration=rtc_config,
+            media_stream_constraints={
+                'video': {
+                    'width':     {'ideal': 640},
+                    'height':    {'ideal': 480},
+                    'frameRate': {'ideal': 10, 'max': 15},
+                },
+                'audio': False,
             },
-            'audio': False,
-        },
-        async_processing=True,
-    )
+            async_processing=True,
+        )
 
-    st.markdown("""
-    <div class="nv-info" style="margin-top:1rem">
-    ℹ &nbsp; <b>Demo tip:</b> Point the camera at a screen showing a foggy road scene.
-    Adjust "Dehaze every N frames" in the sidebar to tune speed vs quality live.
-    </div>""", unsafe_allow_html=True)
+        st.markdown("""
+        <div class="nv-info" style="margin-top:1rem">
+        ℹ &nbsp; <b>Demo tip:</b> Point the camera at a screen showing a foggy road scene.
+        Adjust "Dehaze every N frames" in the sidebar to tune speed vs quality live.
+        </div>""", unsafe_allow_html=True)
 
     st.markdown('</div>', unsafe_allow_html=True)
