@@ -2,10 +2,12 @@ numpy
 pandas
 Pillow
 requests
-torch
-torchvision
-opencv-python-headless
 gdown
+opencv-python-headless
+torch==2.0.1+cpu
+torchvision==0.15.2+cpu
+--extra-index-url https://download.pytorch.org/whl/cpu
 ultralytics
 streamlit-webrtc
 av
+
